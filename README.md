@@ -24,7 +24,7 @@ I need the functional features in it, and Jackson library requires it too.
   in STGroup and ST, for about 6 years ago!
 ## StringTemplate Patches
 - I also consider relative template line numbers in rendering error messages a stupid and annoying bug,
-  so convert these to absolute line number via my "rwperrott-string-template-utils" library.
+  so convert these to absolute line number via my [rwperrott-string-template-utils](https://github.com/rwperrott/rwperrott-string-template-utils) library.
 
 See [Usage](Usage.md) for a template POM.
 
