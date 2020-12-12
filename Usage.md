@@ -8,7 +8,7 @@ The configuration template is as follows:
         <plugin>
             <groupId>rwperrott</groupId>
             <artifactId>string-template-maven-plugin</artifactId>
-            <version>2.2.0</version>
+            <version>2.2.2</version>
             <dependencies> <!-- optional -->
                 <!-- dependencies for library providing extra AttributeRenderers or ModelAdapters -->
             </dependencies>
