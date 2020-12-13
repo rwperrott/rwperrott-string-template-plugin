@@ -48,7 +48,6 @@ import static rwperrott.maven.plugin.st.Utils.selectThrow;
  * will be compiled once, to attempt to make the class available, then the lookup retried, all later failed class
  * lookups will not be retried.  It is probably better for these classes to be provided via one, or more, "provided"
  * scope dependency, for user projects of this plugin.
- *
  */
 @SuppressWarnings("ALL")
 @Mojo(name = "render", defaultPhase = GENERATE_SOURCES, threadSafe = true)
@@ -63,7 +62,7 @@ public final class RenderMojo extends AbstractMojo {
     @Parameter(defaultValue = "${project.basedir}/src/main/string-template")
     public String templateSrcDir;
     /**
-     * If true, stop rendering Groups when the first Group fails or timeouts.
+     * If true, stop when the first failure occurs for groups or templates.
      * <p>
      * Default is false
      */
@@ -104,6 +103,8 @@ public final class RenderMojo extends AbstractMojo {
     @Parameter(defaultValue = "${session}", readonly = true)
     MavenSession session;
 
+    private transient boolean failed;
+
     @Override
     public synchronized String toString() {
         final ToStringBuilder ts = new ToStringBuilder("RenderMojo", true);
@@ -132,7 +133,6 @@ public final class RenderMojo extends AbstractMojo {
             try (final RenderContext ctx = RenderContext.of(this)) { // Ensure that stStateMap saved
                 final Map<String, Group> groupById = initGroups(ctx);
                 initTemplates(ctx, groupById);
-                boolean failed = false;
                 final ExecutorService es = renderGroupsConcurrently
                                            ? Executors.newSingleThreadExecutor()
                                            : Executors.newWorkStealingPool();
@@ -155,9 +155,8 @@ public final class RenderMojo extends AbstractMojo {
                         } catch (STException e) {
                             throw e;
                         } catch (Throwable e) {
-                            failed = true;
                             log.error(format("Render failed for %s (%s)", group, e.getMessage()), e);
-                            if (failFast)
+                            if (failed())
                                 break;
                         }
                         i++;
@@ -175,13 +174,12 @@ public final class RenderMojo extends AbstractMojo {
                 log.info("All Groups rendered");
             }
         } catch (IOException e) {
-            log.warn("RenderContext close failed",e);
+            log.warn("RenderContext close failed", e);
         }
     }
 
     private Map<String, Group> initGroups(final RenderContext env) throws MojoExecutionException {
         final Log log = env.log;
-        boolean failed = false;
         final int count = groups.length;
         final Map<String, Group> byId = new HashMap<>(count);
         for (int i = 0; i < count; i++) {
@@ -189,15 +187,17 @@ public final class RenderMojo extends AbstractMojo {
 
             if (null == group.id) {
                 log.error(format("Group %s of %s has no id", i + 1, count));
-                failed = true;
+                if (failed())
+                    break;
                 continue;
             }
 
             // Forbid duplicate id
             if (null != byId.put(group.id, group)) {
                 log.error(format("Group %s of %s has a duplicate id \"%s\"",
-                                 i+1, count, group.id));
-                failed = true;
+                                 i + 1, count, group.id));
+                if (failed())
+                    break;
                 continue;
             }
 
@@ -206,7 +206,8 @@ public final class RenderMojo extends AbstractMojo {
                 group.init(env);
             } catch (Exception e) {
                 log.error(format("Failed to initialise%n%s", group), e);
-                failed = true;
+                if (failed())
+                    break;
                 continue;
             }
 
@@ -230,15 +231,17 @@ public final class RenderMojo extends AbstractMojo {
 
             if (null == template.id) {
                 log.error(format("Template %s of %s has no id", i + 1, count));
-                failed = true;
+                if (failed())
+                    break;
                 continue;
             }
 
             // Forbid duplicate id
             if (null != byId.put(template.id, template)) {
                 log.error(format("Template %s of %s has a duplicate id \"%s\"",
-                          i+1, count, template.id));
-                failed = true;
+                                 i + 1, count, template.id));
+                if (failed())
+                    break;
                 continue;
             }
 
@@ -247,26 +250,30 @@ public final class RenderMojo extends AbstractMojo {
             if (null == group) {
                 log.error(format("Template id \"%s\" references undefined Group id \"%s\"",
                                  template.id, template.groupId));
-                failed = true;
+                if (failed())
+                    break;
                 continue;
             }
 
             // Init first to resolve field values, which are then validated here.
             try {
-                template.init(group);
+                template.init(ctx,group);
             } catch (Exception e) {
                 log.error(format("Failed to initialise%n%s", template), e);
-                failed = true;
+                if (failed())
+                    break;
                 continue;
             }
 
-            // Forbid duplicate target
-            Template prior = byTarget.put(template.targetPath, template);
+            // Forbid duplicate targetPath
+            final Path targetPath = template.targetPath();
+            Template prior = byTarget.put(targetPath, template);
             if (null != prior) {
                 log.error(format("Template id \"%s\" has same effective target \"%s\" (targetPath \"%s\") as Template id \"%s\" target \"%s\"",
-                                 template.id, template.target, template.targetPath,
+                                 template.id, template.target, targetPath,
                                  prior.id, prior.target));
-                failed = true;
+                if (failed())
+                    break;
                 continue;
             }
 
@@ -277,5 +284,10 @@ public final class RenderMojo extends AbstractMojo {
         }
         if (failed)
             throw new MojoExecutionException("Some Templates had invalid property values");
+    }
+
+    private boolean failed() {
+        failed = true;
+        return failFast;
     }
 }

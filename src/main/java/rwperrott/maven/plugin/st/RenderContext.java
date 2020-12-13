@@ -20,6 +20,7 @@ import static java.nio.file.Files.exists;
 import static java.nio.file.Files.isDirectory;
 import static java.nio.file.Paths.get;
 
+@SuppressWarnings("ALL")
 final class RenderContext extends STContext implements Closeable {
 
     // Used by Template
@@ -28,10 +29,14 @@ final class RenderContext extends STContext implements Closeable {
     // Used by Group
     final String defaultEncoding;
 
-    // Paths because File should have been deprecated in Java 1.7, to nag devs!
+    // Used by Template.init()
     final Path baseDir;
+    // Used by Group.init()
     final Path stSrcDir;
+    // Used by Template.init()
     final Path generatedSourcesJavaDir;
+    // Used by Group.init()
+    final boolean failFast;
     //
     // Private stuff
     private final AtomicBoolean hasJavaFiles = new AtomicBoolean();
@@ -87,6 +92,7 @@ final class RenderContext extends STContext implements Closeable {
         this.log = log;
         this.baseDir = baseDir;
         this.generatedSourcesJavaDir = baseDir.resolve(GENERATED_SOURCES_JAVA);
+        this.failFast = mojo.failFast;
     }
 
     // Use by Template to register generated .java files.

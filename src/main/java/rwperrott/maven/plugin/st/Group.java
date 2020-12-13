@@ -20,6 +20,7 @@ import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.*;
 
 import static java.lang.Long.MAX_VALUE;
@@ -31,6 +32,14 @@ import static rwperrott.maven.plugin.st.Utils.selectThrow;
 import static rwperrott.stringtemplate.v4.STUtils.resolveTypeAndURL;
 
 public final class Group implements STErrorConsumer, Callable<Void> {
+    /**
+     * If true, render templates concurrently, using all the CPU cores.
+     * <p>
+     * Default is false Disabled until ST concurrency bugs in ST4.3.1 are fixed.
+     */
+    @SuppressWarnings({"unused", "FieldCanBeLocal"})
+    //@Parameter(defaultValue = "${string-template.renderTemplatesConcurrently}")
+    private final boolean renderTemplatesConcurrently = false;
     /**
      * The unique Group id, can be referenced groupId of Templates.
      */
@@ -60,7 +69,7 @@ public final class Group implements STErrorConsumer, Callable<Void> {
      * Default is ${string-template.source}
      */
     @SuppressWarnings("CanBeFinal")
-    @Parameter(defaultValue ="${string-template.source}")
+    @Parameter(defaultValue = "${string-template.source}")
     public String source = DEFAULT_DIR;
     /**
      * The name of the charset encoding of any .st or .stg files, if different from the project source encoding.
@@ -69,6 +78,13 @@ public final class Group implements STErrorConsumer, Callable<Void> {
      */
     @Parameter(defaultValue = "${project.build.sourceEncoding}")
     public String encoding;
+    /**
+     * If true, stop  when the first failure occurs for this group.
+     * <p>
+     * Default is false
+     */
+    @Parameter
+    public boolean failFast = false;
     /**
      * A map of type name to AttributeRenders class name; key = name of Class object to be rendered, value = name of
      * AttributeRender class to have an instance registered.
@@ -91,23 +107,6 @@ public final class Group implements STErrorConsumer, Callable<Void> {
     @SuppressWarnings("unused")
     @Parameter
     public Map<String, String> modelAdaptors;
-    /**
-     * If true, stop rendering Templates when the first fails or timeouts.
-     * <p>
-     * Default is false
-     */
-    @SuppressWarnings("CanBeFinal")
-    @Parameter(defaultValue = "${string-template.failFast}")
-    public boolean failFast = false;
-    /**
-     * If true, render templates concurrently, using all the CPU cores.
-     * <p>
-     * Default is false
-     * Disabled until ST concurrency bugs in ST4.3.1 are fixed.
-     */
-    @SuppressWarnings({"unused", "FieldCanBeLocal"})
-    //@Parameter(defaultValue = "${string-template.renderTemplatesConcurrently}")
-    private final boolean renderTemplatesConcurrently = false;
     /**
      * A java.util.concurrent.TimeUnit for timeout of this.call().
      * <t>
@@ -132,14 +131,14 @@ public final class Group implements STErrorConsumer, Callable<Void> {
     //
     // Transient variables
     //
-    transient STGroupType type;
-    transient STGroup stGroup;
-    transient RenderContext ctx;
+    private transient STGroupType type;
+    private transient STGroup stGroup;
     private URL url;
-    private boolean failed;
+    private transient RenderContext ctx;
+    private transient boolean failed;
 
     @Override
-    public synchronized String toString() {
+    public String toString() {
         final ToStringBuilder ts = new ToStringBuilder("Group", true);
         //
         ts.add("id", id);
@@ -162,11 +161,9 @@ public final class Group implements STErrorConsumer, Callable<Void> {
      * validate and initialise for possible concurrency.
      */
     @SuppressWarnings("UseSpecificCatch")
-    void init(final RenderContext env) {
-        this.ctx = env;
-
+    void init(final RenderContext ctx) {
         if (null == encoding)
-            encoding = env.defaultEncoding;
+            encoding = ctx.defaultEncoding;
 
         if (null == source) {
             throw new IllegalArgumentException("source is null");
@@ -179,43 +176,40 @@ public final class Group implements STErrorConsumer, Callable<Void> {
         // something which StringTemplate should do itself!
         try {
             final STUtils.TypeAndURL typeAndDir
-                    = resolveTypeAndURL(source, env.stSrcDir);
+                    = resolveTypeAndURL(source, ctx.stSrcDir);
             this.type = typeAndDir.type;
             this.url = typeAndDir.url;
         } catch (IOException e) {
             throw new IllegalArgumentException(
                     format("Invalid source \"%s\" (%s)", source, e.getMessage()), e);
         }
+
+        this.ctx = ctx;
+        this.failFast |= ctx.failFast;
     }
 
-    @SuppressWarnings("SynchronizeOnNonFinalField")
+    // Used by Template.call(), so don't need to expose STGroup.
     ST getST(final String name, final Map<String, Object> attributes, final STErrorListener listener) {
-        // Not thread safe because getInstance doesn't accept a listener, so have to lock.
-        synchronized (stGroup) {
-            stGroup.setListener(listener);
-            final ST st = stGroup.getInstanceOf(name);
-            if (null == st)
-                throw new IllegalStateException("null ST returned");
-            if (null != attributes)
-                attributes.forEach(st::add);
-            return st;
-        }
+        stGroup.setListener(listener);
+        final ST st = stGroup.getInstanceOf(name);
+        Objects.requireNonNull(st, "st");
+        if (null != attributes)
+            attributes.forEach(st::add);
+        return st;
     }
 
-    @SuppressWarnings({"UseSpecificCatch", "ThrowableResultIgnored", "SynchronizationOnLocalVariableOrMethodParameter"})
+    @SuppressWarnings({"UseSpecificCatch", "ThrowableResultIgnored"})
     @Override
     public Void call() {
-        final RenderContext env = this.ctx;
-        final Log log = env.log;
+        final RenderContext ctx = this.ctx;
+        final Log log = ctx.log;
 
         // Create and load STGroup
         final STGroup stGroup;
         try {
             stGroup = type.getSTGroup(id, source, url, encoding);
-            synchronized (stGroup) {
-                stGroup.setListener(this); // Detect bug of StringTemplate not always throwing an exception for a load error
-                stGroup.load();
-            }
+            stGroup.setListener(this); // Detect bug of StringTemplate not always throwing an exception for a load error
+            stGroup.load();
         } catch (Exception e) {
             throw new IllegalStateException(format("failed to create an %s (%s)",
                                                    type.stGroupClass.getSimpleName(), e.getMessage()), e);
@@ -228,10 +222,8 @@ public final class Group implements STErrorConsumer, Callable<Void> {
         log.info(format("Group id \"%s\" created an %s \"%s\"",
                         id, type.stGroupClass.getSimpleName(), type.getSource(stGroup)));
         //
-        synchronized (stGroup) {
-            env.registerRenderers(stGroup, attributeRenderers);
-            env.registerModelAdaptors(stGroup, modelAdaptors);
-        }
+        ctx.registerRenderers(stGroup, attributeRenderers);
+        ctx.registerModelAdaptors(stGroup, modelAdaptors);
         this.stGroup = stGroup;
 
         final ExecutorService es = renderTemplatesConcurrently
@@ -254,11 +246,9 @@ public final class Group implements STErrorConsumer, Callable<Void> {
                         throw selectThrow(ex);
                     }
                 } catch (Throwable e) {
-                    failed = true;
                     log.error(format("Render failed for %s (%s)", template, e.getMessage()), e);
-                    if (failFast) {
+                    if (failed())
                         break;
-                    }
                 }
                 i++;
             }
@@ -271,7 +261,7 @@ public final class Group implements STErrorConsumer, Callable<Void> {
             }
         }
         if (failed) {
-            throw new STException("Some Templates failed to render using "+this, null);
+            throw new STException("Some Templates failed to render using " + this, null);
         }
 
         log.info(format("Render completed for Group id \"%s\"", id));
@@ -279,10 +269,16 @@ public final class Group implements STErrorConsumer, Callable<Void> {
         return null;
     }
 
+    private boolean failed() {
+        failed = true;
+        return failFast;
+    }
+
     @Override
     public void accept(String type, STMessage msg) {
-        ctx.log.error(format("%s, for group id '%s'", msg, id), msg.cause);
-        failed = true;
+        final String s = format("%s, for group id '%s'", msg, id);
+        ctx.log.error(s, msg.cause);
     }
+
     static final String DEFAULT_DIR = ".";
 }

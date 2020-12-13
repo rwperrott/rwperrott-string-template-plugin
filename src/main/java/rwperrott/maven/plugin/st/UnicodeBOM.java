@@ -5,14 +5,16 @@ import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 
+@SuppressWarnings("unused")
 enum UnicodeBOM {
     UTF_8(StandardCharsets.UTF_8, 0xEF, 0xBB, 0xBF),
     UTF_16BE(StandardCharsets.UTF_16BE, 0xFE, 0xFF),
     UTF_16LE(StandardCharsets.UTF_16LE, 0xFF, 0xFE),
     UTF_32BE("UTF-32BE", 0x00, 0x00, 0xFE, 0xFF),
     UTF_32LE("UTF-32LE", 0xFF, 0xFE, 0x00, 0x00);
-    //
+    // Used by Template.init()
     final Charset charset;
+    // Used by Template.init()
     final byte[] bytes;
 
     UnicodeBOM(final Charset charset, final int... a) {

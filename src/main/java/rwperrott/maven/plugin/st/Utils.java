@@ -30,7 +30,10 @@ final class Utils {
         return path.getFileName().toString().endsWith(".java");
     }
 
-    // Support following links just-in-case
+    // Used by Template.init()
+    /**
+     * Support following links just-in-case
+     */
     static BasicFileAttributes existsAttributes(Path path, LinkOption... options) {
         try {
             // Merge in Files.exists-like code, to simplify use.

@@ -4,12 +4,15 @@
 
 package rwperrott.maven.plugin.st;
 
-import rwperrott.stringtemplate.v4.STErrorConsumer;
 import org.apache.maven.plugin.logging.Log;
 import org.apache.maven.plugins.annotations.Parameter;
-import org.stringtemplate.v4.*;
+import org.stringtemplate.v4.AutoIndentWriter;
+import org.stringtemplate.v4.NoIndentWriter;
+import org.stringtemplate.v4.ST;
+import org.stringtemplate.v4.STWriter;
 import org.stringtemplate.v4.compiler.STException;
 import org.stringtemplate.v4.misc.STMessage;
+import rwperrott.stringtemplate.v4.STErrorConsumer;
 import rwperrott.stringtemplate.v4.ToStringBuilder;
 
 import java.io.FileNotFoundException;
@@ -33,7 +36,7 @@ import static java.nio.file.Files.newOutputStream;
 import static java.nio.file.Paths.get;
 import static java.nio.file.StandardOpenOption.*;
 import static java.util.concurrent.TimeUnit.SECONDS;
-import static java.util.regex.Pattern.*;
+import static java.util.regex.Pattern.compile;
 import static org.stringtemplate.v4.misc.ErrorType.NO_SUCH_PROPERTY;
 import static rwperrott.maven.plugin.st.UnicodeBOM.of;
 import static rwperrott.maven.plugin.st.Utils.*;
@@ -59,6 +62,13 @@ public final class Template implements STErrorConsumer, Callable<Void> {
      */
     @Parameter(property = "name", required = true)
     public String name;
+    /**
+     * If true, stop  when the first failure occurs in this template.
+     * <p>
+     * Default is false
+     */
+    @Parameter
+    public boolean failFast = false;
     /**
      * A JSON serialised Map of attributes to be supplied to the template.
      */
@@ -132,18 +142,19 @@ public final class Template implements STErrorConsumer, Callable<Void> {
     /**
      * Only for transient storage of deserialized jsonAttributes.
      */
-    transient Path targetPath;
     private transient Map<String, Object> attributes;
-    private transient Log log;
+    private transient Path targetPath;
     private transient Charset targetCharset;
     private transient boolean isJava;
     private transient byte[] bomBytes;
+    //
+    private transient RenderContext ctx;
     private transient Group group;
     private transient ST st;
     private transient boolean failed;
 
     @Override
-    public synchronized String toString() {
+    public String toString() {
         final ToStringBuilder ts = new ToStringBuilder("Template", true);
         ts.add("id", id);
         ts.add("groupId", groupId);
@@ -165,11 +176,17 @@ public final class Template implements STErrorConsumer, Callable<Void> {
         return ts.toString();
     }
 
-    // synchronized this maybe required for thread-safety.
-    void init(Group group) throws Exception {
-        this.group = group;
+    Path targetPath() {
+        return targetPath;
+    }
 
-        final RenderContext env = group.ctx;
+    private boolean failed() {
+        failed = true;
+        return failFast;
+    }
+
+    // synchronized this maybe required for thread-safety.
+    void init(final RenderContext ctx, final Group group) throws Exception {
         // Deserialize JSON to a Map, then validate to ensure that all the map keys are Strings.
         if (jsonAttributes != null) {
             final Map<?, ?> map = jsonMappers.get().readValue(jsonAttributes, Map.class);
@@ -183,7 +200,7 @@ public final class Template implements STErrorConsumer, Callable<Void> {
         }
 
         if (null == targetEncoding)
-            targetEncoding = env.defaultEncoding;
+            targetEncoding = ctx.defaultEncoding;
 
         final UnicodeBOM bom = of(targetEncoding);
         if (null == bom) {
@@ -199,18 +216,18 @@ public final class Template implements STErrorConsumer, Callable<Void> {
         targetPath = get(target);
         // Resolve target to an absolute Path, and detect java files in ${basedir}/target/generated-sources/java directory
         if (targetPath.isAbsolute()) {
-            if (targetPath.startsWith(env.generatedSourcesJavaDir) && isJavaFile(targetPath))
+            if (targetPath.startsWith(ctx.generatedSourcesJavaDir) && isJavaFile(targetPath))
                 isJava = true;
         } else {
             Path relativeTargetPath = targetPath;
             if (isJavaFile(relativeTargetPath)) {
                 isJava = true;
                 if (relativeTargetPath.startsWith(RenderContext.GENERATED_SOURCES_JAVA))
-                    targetPath = env.baseDir.resolve(relativeTargetPath);
+                    targetPath = ctx.baseDir.resolve(relativeTargetPath);
                 else
-                    targetPath = env.generatedSourcesJavaDir.resolve(relativeTargetPath);
+                    targetPath = ctx.generatedSourcesJavaDir.resolve(relativeTargetPath);
             } else
-                targetPath = env.baseDir.resolve(relativeTargetPath);
+                targetPath = ctx.baseDir.resolve(relativeTargetPath);
         }
 
         targetPath = targetPath.normalize().toAbsolutePath();
@@ -225,17 +242,20 @@ public final class Template implements STErrorConsumer, Callable<Void> {
                         format("parent of target '%s' is not a directory", target));
         }
 
-        this.log = env.log;
+        this.ctx = ctx;
+        this.failFast |= group.failFast;
+        this.group = group;
     }
-
 
     @Override
     @SuppressWarnings("UseSpecificCatch")
     public Void call() throws Exception {
+        final Log log = ctx.log;
+
         // Get template
         final ST st;
         try {
-            st = group.getST(name,attributes,this);
+            st = group.getST(name, attributes, this);
         } catch (Exception e) {
             throw new STException("failed to get ST instance for " + this, e);
         }
@@ -252,7 +272,7 @@ public final class Template implements STErrorConsumer, Callable<Void> {
                     os.write(bomBytes);
                 final Writer w = new OutputStreamWriter(os, targetCharset);
 
-                    // Must provide listener to writer, because don't want it to use STGroup one when concurrent use stops
+                // Must provide listener to writer, because don't want it to use STGroup one when concurrent use stops
                 // causing errors.
                 final STWriter stWriter = autoIndent
                                           ? new AutoIndentWriter(w)
@@ -268,10 +288,10 @@ public final class Template implements STErrorConsumer, Callable<Void> {
         if (failed)
             throw new STException("render failed for " + this, null);
 
-        log.info(format("Render completed for Template id \"%s\"",id));
+        log.info(format("Render completed for Template id \"%s\"", id));
 
         if (isJava)
-            group.ctx.onGeneratedSourcesJavaFile();
+            ctx.onGeneratedSourcesJavaFile();
 
         return null;
     }
@@ -279,17 +299,19 @@ public final class Template implements STErrorConsumer, Callable<Void> {
     @Override
     @SuppressWarnings({"UseSpecificCatch", "null"})
     public void accept(final String type, STMessage msg) {
+        final RenderContext ctx = this.ctx;
+        final Log log = ctx.log;
         try {
-            msg = group.ctx.patch(msg, group.encoding);
-        } catch(Exception e) {
-           log.warn(e.getMessage(), msg.cause);
+            msg = ctx.patch(msg, group.encoding);
+        } catch (Exception e) {
+            log.warn(e.getMessage(), msg.cause);
         }
 
         if (allowNoSuchProperty && NO_SUCH_PROPERTY == msg.error)
             log.warn(format("%s, for template id \"%s\", groupId \"%s\" name \"%s\"", msg, id, groupId, name));
         else {
-            log.error(format("%s, for template id \"%s\", groupId \"%s\", name \"%s\"", msg, id, groupId, name));
-            failed = true;
+            final String s = format("%s, for template id \"%s\", groupId \"%s\", name \"%s\"", msg, id, groupId, name);
+            log.error(s, msg.cause);
         }
     }
 
