@@ -23,7 +23,7 @@
 
     <groupId>com.github.rwperrott</groupId>
     <artifactId>rwperrott-string-template-plugin</artifactId>
-    <version>2.2.2</version>
+    <version>2.2.3</version>
     <packaging>maven-plugin</packaging>
 
     <name>StringTemplate Maven Plugin</name>
