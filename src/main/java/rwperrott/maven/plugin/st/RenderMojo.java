@@ -178,8 +178,8 @@ public final class RenderMojo extends AbstractMojo {
         }
     }
 
-    private Map<String, Group> initGroups(final RenderContext env) throws MojoExecutionException {
-        final Log log = env.log;
+    private Map<String, Group> initGroups(final RenderContext ctx) throws MojoExecutionException {
+        final Log log = ctx.log;
         final int count = groups.length;
         final Map<String, Group> byId = new HashMap<>(count);
         for (int i = 0; i < count; i++) {
@@ -203,7 +203,7 @@ public final class RenderMojo extends AbstractMojo {
 
             // Init first to resolve field values, which are then validated here.
             try {
-                group.init(env);
+                group.init(ctx);
             } catch (Exception e) {
                 log.error(format("Failed to initialise%n%s", group), e);
                 if (failed())
@@ -220,8 +220,8 @@ public final class RenderMojo extends AbstractMojo {
         return byId;
     }
 
-    private void initTemplates(final RenderContext env, final Map<String, Group> groupById) throws MojoExecutionException {
-        final Log log = env.log;
+    private void initTemplates(final RenderContext ctx, final Map<String, Group> groupById) throws MojoExecutionException {
+        final Log log = ctx.log;
         boolean failed = false;
         final int count = templates.length;
         final Map<String, Template> byId = new HashMap<>(count);
