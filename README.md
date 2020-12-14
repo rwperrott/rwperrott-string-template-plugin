@@ -35,14 +35,14 @@ I need the functional features in it, and Jackson library requires it too.
 </dependency>
 ```
 
-The jars could be requested using jitpack.io; it does not appear to provide an index.
+The jars could be requested using jitpack.io.
+Jetpack does not appear to provide an index, at least for free use, so you probably won't see any coordinate hints in
+your IDE.
 ```xml
-<repositories>
 <repository>
   <id>jitpack.io</id>
   <url>https://jitpack.io</url>
 </repository>
-</repositories>
 ```
 
 ### Usage
@@ -96,7 +96,7 @@ A configuration template is as follows:
                         <groupId>Required: id of a group</groupId>
                         <name>Required: name of a StringTemplate template</name>
                         <failFast>Optional: if true, stop when first failure occurs.</failFast>
-                        <jsonAttributes>Optional: JSON map of attributes</jsonAttributes>
+                        <jsonAttributes>Optional: JSON map of attributes, in a possible inside a CDATA clause</jsonAttributes>
                         <target>Required: relative or absolute file path, java paths can be just the slashed full package name .java</target>
                         <targetEncoding>Optional: override default source encoding charset name</targetEncoding>
                         <allowNoSuchProperty>Optional: if false, fail for a NO_SUCH_PROPERTY error</allowNoSuchProperty>
@@ -111,3 +111,24 @@ A configuration template is as follows:
     </plugins>
 </build>
 ```
+* Any element, like "source" or "jsonAttributes" with a value containing any XML reserved characters,
+  is more readable and maintainable wrapped in a CDATA clause, that using XML escaping.
+  
+e.g. a String template:
+```xml
+<source><![CDATA[
+hello(someone) ::= <<
+hello <someone>
+>>
+]]></source>
+```
+e.g. tricky JSON:
+```xml
+<jsonAttributes><![CDATA[
+{
+   "lessThan" : "<",
+   "moreThan" : ">",
+}
+]]></jsonAttributes>
+```
+
