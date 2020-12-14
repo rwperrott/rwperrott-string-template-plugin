@@ -5,7 +5,6 @@ package rwperrott.maven.plugin.st;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.stringtemplate.v4.ST;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -16,11 +15,11 @@ import java.nio.file.spi.FileSystemProvider;
 import java.util.*;
 import java.util.concurrent.ExecutionException;
 
-import static java.lang.String.format;
 import static java.lang.ThreadLocal.withInitial;
 import static java.nio.file.LinkOption.NOFOLLOW_LINKS;
 import static java.nio.file.StandardCopyOption.ATOMIC_MOVE;
 import static java.nio.file.StandardCopyOption.REPLACE_EXISTING;
+import static rwperrott.stringtemplate.v4.STUtils.validateAttributes;
 
 final class Utils {
     private Utils() {
@@ -77,16 +76,5 @@ final class Utils {
         final Map<K, V> map = jsonMappers.get().readValue(json, Map.class);
         validateAttributes(map, name, checkDepth);
         return map;
-    }
-
-    private static void validateAttributes(final Map<?,?> map, final String name, final int checkDepth) {
-        map.forEach((k, v) -> {
-            if (k.getClass() != String.class)
-                throw new IllegalArgumentException(format("non-String key %s:%s in %s",
-                                                          k.getClass().getName(), k.toString(), name));
-            if (checkDepth > 0 && v instanceof Map) {
-                validateAttributes((Map<?,?>)v, name, checkDepth-1);
-            }
-        });
     }
 }
