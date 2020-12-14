@@ -71,10 +71,7 @@ final class Utils {
         return cause;
     }
 
-    @SuppressWarnings("unchecked")
-    static <K,V> Map<K,V> readAndCheckJSONMap(final String json,final String name, final int checkDepth) throws JsonProcessingException {
-        final Map<K, V> map = jsonMappers.get().readValue(json, Map.class);
-        validateAttributes(map, name, checkDepth);
-        return map;
+    static <V> Map<String,V> readAndCheckJSONMap(final String json,final String name, final int checkDepth) throws JsonProcessingException {
+        return validateAttributes(jsonMappers.get().readValue(json, Map.class), name, checkDepth);
     }
 }
