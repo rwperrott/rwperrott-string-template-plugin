@@ -17,19 +17,16 @@ import rwperrott.stringtemplate.v4.ToStringBuilder;
 
 import java.io.IOException;
 import java.net.URL;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
+import java.util.*;
 import java.util.concurrent.*;
 
 import static java.lang.Long.MAX_VALUE;
 import static java.lang.String.format;
+import static java.nio.charset.Charset.forName;
 import static java.util.concurrent.Executors.newSingleThreadExecutor;
 import static java.util.concurrent.Executors.newWorkStealingPool;
 import static java.util.concurrent.TimeUnit.SECONDS;
-import static rwperrott.maven.plugin.st.Utils.selectThrow;
-import static rwperrott.stringtemplate.v4.STUtils.resolveTypeAndURL;
+import static rwperrott.maven.plugin.st.Utils.*;
 
 public final class Group implements STErrorConsumer, Callable<Void> {
     /**
@@ -44,7 +41,7 @@ public final class Group implements STErrorConsumer, Callable<Void> {
      * The unique Group id, can be referenced groupId of Templates.
      */
     @SuppressWarnings("unused")
-    @Parameter(property = "id", required = true)
+    @Parameter(required = true)
     public String id;
     /**
      * A string expression, of one or more string template, a .stg file path, or a directory path.
@@ -69,14 +66,14 @@ public final class Group implements STErrorConsumer, Callable<Void> {
      * Default is ${string-template.source}
      */
     @SuppressWarnings("CanBeFinal")
-    @Parameter(defaultValue = "${string-template.source}")
+    @Parameter(property = "string-template.source")
     public String source = DEFAULT_DIR;
     /**
      * The name of the charset encoding of any .st or .stg files, if different from the project source encoding.
      * <p>
      * Default is ${project.build.sourceEncoding}, or the default charset name.
      */
-    @Parameter(defaultValue = "${project.build.sourceEncoding}")
+    @Parameter(property = "project.build.sourceEncoding")
     public String encoding;
     /**
      * If true, stop  when the first failure occurs for this group.
@@ -122,6 +119,24 @@ public final class Group implements STErrorConsumer, Callable<Void> {
      */
     @SuppressWarnings("CanBeFinal")
     public long timeoutDuration = MAX_VALUE;
+
+    /**
+     * An optional JSON serialised Map of named maps; the name being a template name.
+     * <p>
+     * A "*" named map is apply to all requested ST (templates)
+     * <p>
+     * All named entries must be Maps of String keyed values!
+     * <p>
+     * This can be useful when a template is used multiple times with some shared attributes, or if all templates have
+     * some shared attributes.
+     * <p>
+     * The maps are applied to an ST in this order: "*" named map, the template named map, then the jsonAttribute map
+     * provided by the Template object.  If a named null value is provided for an ST, then that attribute is removed
+     * from the ST, rather than added; this can be used to filter out unwanted attributes.
+     */
+    @Parameter
+    public String jsonAttributesByTemplate;
+
     /**
      * The array of templates to render, for this group.
      */
@@ -131,8 +146,11 @@ public final class Group implements STErrorConsumer, Callable<Void> {
     //
     // Transient variables
     //
+    private transient Map<String, Map<String, ?>> attributesByTemplate;
     private transient STGroupType type;
     private transient STGroup stGroup;
+    // Cache of previously re
+    private transient Map<String, ST> stCache = new HashMap<>();
     private URL url;
     private transient RenderContext ctx;
     private transient boolean failed;
@@ -161,22 +179,18 @@ public final class Group implements STErrorConsumer, Callable<Void> {
      * validate and initialise for possible concurrency.
      */
     @SuppressWarnings("UseSpecificCatch")
-    void init(final RenderContext ctx) {
-        if (null == encoding)
-            encoding = ctx.defaultEncoding;
-
-        if (null == source) {
-            throw new IllegalArgumentException("source is null");
-        }
-        if (source.trim().isEmpty()) {
+    void init(final RenderContext ctx) throws Exception {
+        if (Objects.requireNonNull(source, "source").trim().isEmpty()) {
             throw new IllegalArgumentException("source is blank");
         }
+
+        encoding = ctx.resolveEncoding(encoding);
+        forName(encoding);
 
         // Resolve type of source, and resolve relative paths with a default directory,
         // something which StringTemplate should do itself!
         try {
-            final STUtils.TypeAndURL typeAndDir
-                    = resolveTypeAndURL(source, ctx.stSrcDir);
+            final STUtils.TypeAndURL typeAndDir = ctx.resolveTypeAndURL(source);
             this.type = typeAndDir.type;
             this.url = typeAndDir.url;
         } catch (IOException e) {
@@ -184,17 +198,35 @@ public final class Group implements STErrorConsumer, Callable<Void> {
                     format("Invalid source \"%s\" (%s)", source, e.getMessage()), e);
         }
 
+        if (jsonAttributesByTemplate != null)
+            attributesByTemplate = readAndCheckJSONMap(jsonAttributesByTemplate, "jsonAttributesByTemplate", 1);
+
         this.ctx = ctx;
-        this.failFast |= ctx.failFast;
+        this.failFast |= ctx.failFast();
     }
 
     // Used by Template.call(), so don't need to expose STGroup.
     ST getST(final String name, final Map<String, Object> attributes, final STErrorListener listener) {
         stGroup.setListener(listener);
-        final ST st = stGroup.getInstanceOf(name);
-        Objects.requireNonNull(st, "st");
-        if (null != attributes)
-            attributes.forEach(st::add);
+        // Get ST via a cache for speed when render not concurrent
+        final ST st;
+        if (renderTemplatesConcurrently)
+            st = Objects.requireNonNull(stGroup.getInstanceOf(name), "st");
+        else
+            st = stCache.compute(name, (k, v) -> {
+                if (null == v)
+                    v = Objects.requireNonNull(stGroup.getInstanceOf(name), "st");
+                else
+                    removeAttributes(v, v.getAttributes());
+                return v;
+            });
+
+        // Set ST attributes
+        if (null != attributesByTemplate) {
+            addAttributes(st, attributesByTemplate.get("*"));
+            addAttributes(st, attributesByTemplate.get(name));
+        }
+        addAttributes(st, attributes);
         return st;
     }
 
@@ -202,7 +234,7 @@ public final class Group implements STErrorConsumer, Callable<Void> {
     @Override
     public Void call() {
         final RenderContext ctx = this.ctx;
-        final Log log = ctx.log;
+        final Log log = ctx.log();
 
         // Create and load STGroup
         final STGroup stGroup;
@@ -277,7 +309,7 @@ public final class Group implements STErrorConsumer, Callable<Void> {
     @Override
     public void accept(String type, STMessage msg) {
         final String s = format("%s, for group id '%s'", msg, id);
-        ctx.log.error(s, msg.cause);
+        ctx.log().error(s, msg.cause);
     }
 
     static final String DEFAULT_DIR = ".";
