@@ -7,54 +7,37 @@ import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.plugin.logging.Log;
 import org.apache.maven.project.MavenProject;
 import rwperrott.stringtemplate.v4.STContext;
+import rwperrott.stringtemplate.v4.STUtils;
 
 import java.io.Closeable;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static java.lang.String.format;
-import static java.nio.charset.Charset.defaultCharset;
 import static java.nio.file.Files.exists;
 import static java.nio.file.Files.isDirectory;
 import static java.nio.file.Paths.get;
 
-@SuppressWarnings("ALL")
 final class RenderContext extends STContext implements Closeable {
 
-    // Used by Template
-    final MavenProject project;
-    final Log log;
-    // Used by Group
-    final String defaultEncoding;
-
-    // Used by Template.init()
-    final Path baseDir;
-    // Used by Group.init()
-    final Path stSrcDir;
-    // Used by Template.init()
-    final Path generatedSourcesJavaDir;
-    // Used by Group.init()
-    final boolean failFast;
+    private final RenderMojo mojo;
+    private final Log log;
+    private final Path baseDir;
+    private final Path stSrcDir;
+    private final Path generatedSourcesJavaDir;
     //
     // Private stuff
     private final AtomicBoolean hasJavaFiles = new AtomicBoolean();
-    static final Path GENERATED_SOURCES_JAVA
-            = get("target", "generated-sources", "java");
-
-    static RenderContext of(final RenderMojo mojo) throws MojoFailureException {
-        final Path baseDir = mojo.project.getBasedir().toPath();
-        return new RenderContext(mojo, baseDir, mojo.getLog());
-    }
-
     private RenderContext(
             final RenderMojo mojo,
             final Path baseDir,
             final Log log) throws MojoFailureException {
         super(RenderContext.class.getClassLoader(),
-                log::error);
-
+              log::error);
+        this.mojo = mojo;
         final Path templateSrcDir = get(mojo.templateSrcDir);
         // Resolve stSrcDir if relative
         if (!templateSrcDir.isAbsolute()) {
@@ -77,31 +60,77 @@ final class RenderContext extends STContext implements Closeable {
         } catch (IOException e) {
             throw new MojoFailureException(
                     format("Invalid templateSrcDir '%s' (%s)",
-                            templateSrcDir, e.getMessage()), e);
+                           templateSrcDir, e.getMessage()), e);
         }
 
-        // Get default encoding of source and resource files, including .st and .stg files,
-        // and provide a default value for rendered files too; not, should have been deprecated,,
-        // FileWriter lameness.
-        this.defaultEncoding = mojo.project.getProperties()
-                .getProperty("project.build.sourceEncoding", defaultCharset().name());
         // Made use of optional plugin Dependencies feature to remove the need to explicitly build a ClassLoader,
         // instead get the classLoader of a plugin class.
         //
-        this.project = mojo.project;
         this.log = log;
         this.baseDir = baseDir;
         this.generatedSourcesJavaDir = baseDir.resolve(GENERATED_SOURCES_JAVA);
-        this.failFast = mojo.failFast;
+    }
+
+    Log log() {
+        return log;
+    }
+
+    Path resolveTargetPath(String target) {
+        Path targetPath = get(target);
+        if (targetPath.isAbsolute())
+            return targetPath;
+
+        if (isJavaFile(targetPath))
+            switch (targetPath.getName(0).toString()) {
+                case ".":
+                case "src":
+                case "target":
+                    break;
+                default:
+                    if (!targetPath.startsWith(RenderContext.GENERATED_SOURCES_JAVA)) {
+                        return generatedSourcesJavaDir.resolve(targetPath);
+                    }
+                    break;
+            }
+
+        return baseDir.resolve(targetPath);
+    }
+
+    private static boolean isJavaFile(Path path) {
+        return path.getFileName().toString().endsWith(".java");
+    }
+
+    boolean isGeneratedSourcesJavaFile(Path path) {
+        return path.startsWith(generatedSourcesJavaDir) && isJavaFile(path);
+    }
+
+    boolean failFast() {
+        return mojo.failFast;
+    }
+
+    String resolveEncoding(String encoding) {
+        return null == encoding ? mojo.sourceEncoding : encoding.toUpperCase(Locale.ROOT);
+    }
+
+    STUtils.TypeAndURL resolveTypeAndURL(final String source) throws IOException {
+        return STUtils.resolveTypeAndURL(source, stSrcDir);
     }
 
     // Use by Template to register generated .java files.
     void onGeneratedSourcesJavaFile() {
         // Only set once to avoid redundant costs
         if (hasJavaFiles.compareAndSet(false, true)) {
+            final MavenProject project = mojo.project;
             synchronized (project) { // Just-in-case method not Thread-safe.
                 project.addCompileSourceRoot(generatedSourcesJavaDir.toString());
             }
         }
+    }
+    static final Path GENERATED_SOURCES_JAVA
+            = get("target", "generated-sources", "java");
+
+    static RenderContext of(final RenderMojo mojo) throws MojoFailureException {
+        final Path baseDir = mojo.project.getBasedir().toPath().toAbsolutePath();
+        return new RenderContext(mojo, baseDir, mojo.getLog());
     }
 }

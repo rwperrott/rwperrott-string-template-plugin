@@ -36,6 +36,7 @@ import java.util.concurrent.Future;
 import java.util.stream.Stream;
 
 import static java.lang.String.format;
+import static java.nio.charset.Charset.defaultCharset;
 import static org.apache.maven.plugins.annotations.LifecyclePhase.GENERATE_SOURCES;
 import static rwperrott.maven.plugin.st.Utils.selectThrow;
 
@@ -52,7 +53,8 @@ import static rwperrott.maven.plugin.st.Utils.selectThrow;
 @SuppressWarnings("ALL")
 @Mojo(name = "render", defaultPhase = GENERATE_SOURCES, threadSafe = true)
 public final class RenderMojo extends AbstractMojo {
-
+    @Parameter(property="project.build.sourceEncoding")
+    public String sourceEncoding = defaultCharset().name();
     /**
      * A relative directory path under "${project}/src/main", or an absolute directory path, to be used as the base
      * directory for template groups.
@@ -66,7 +68,7 @@ public final class RenderMojo extends AbstractMojo {
      * <p>
      * Default is false
      */
-    @Parameter(defaultValue = "${string-template.failFast}")
+    @Parameter(property = "string-template.failFast")
     public boolean failFast = false;
 
     /**
@@ -74,7 +76,7 @@ public final class RenderMojo extends AbstractMojo {
      * <p>
      * Default is false
      */
-    @Parameter(defaultValue = "${string-template.renderGroupsConcurrently}")
+    @Parameter(property = "string-template.renderGroupsConcurrently")
     public boolean renderGroupsConcurrently;
 
     /**
@@ -94,13 +96,13 @@ public final class RenderMojo extends AbstractMojo {
     /**
      * The Maven Project Object
      */
-    @Parameter(defaultValue = "${project}", readonly = true)
+    @Parameter(property = "project", readonly = true)
     MavenProject project;
 
     /**
      * The Maven Session Object
      */
-    @Parameter(defaultValue = "${session}", readonly = true)
+    @Parameter(property = "session", readonly = true)
     MavenSession session;
 
     private transient boolean failed;
@@ -179,7 +181,7 @@ public final class RenderMojo extends AbstractMojo {
     }
 
     private Map<String, Group> initGroups(final RenderContext ctx) throws MojoExecutionException {
-        final Log log = ctx.log;
+        final Log log = ctx.log();
         final int count = groups.length;
         final Map<String, Group> byId = new HashMap<>(count);
         for (int i = 0; i < count; i++) {
@@ -221,7 +223,7 @@ public final class RenderMojo extends AbstractMojo {
     }
 
     private void initTemplates(final RenderContext ctx, final Map<String, Group> groupById) throws MojoExecutionException {
-        final Log log = ctx.log;
+        final Log log = ctx.log();
         boolean failed = false;
         final int count = templates.length;
         final Map<String, Template> byId = new HashMap<>(count);

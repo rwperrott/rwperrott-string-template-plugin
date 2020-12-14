@@ -4,6 +4,7 @@
 
 package rwperrott.maven.plugin.st;
 
+import org.apache.maven.Maven;
 import org.apache.maven.plugin.logging.Log;
 import org.apache.maven.plugins.annotations.Parameter;
 import org.stringtemplate.v4.AutoIndentWriter;
@@ -23,6 +24,7 @@ import java.nio.charset.Charset;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
@@ -49,18 +51,18 @@ public final class Template implements STErrorConsumer, Callable<Void> {
     /**
      * The unique Template id, for logging.
      */
-    @Parameter(property = "id", required = true)
+    @Parameter(required = true)
     public String id;
     /**
      * The id of a Group, which will provide an STGroup, to supply the named ST (compiled template) object for
      * rendering.
      */
-    @Parameter(property = "groupId", required = true)
+    @Parameter(required = true)
     public String groupId;
     /**
      * The name of a template in an STGroup object, used to get it's ST object.
      */
-    @Parameter(property = "name", required = true)
+    @Parameter(required = true)
     public String name;
     /**
      * If true, stop  when the first failure occurs in this template.
@@ -71,21 +73,20 @@ public final class Template implements STErrorConsumer, Callable<Void> {
     public boolean failFast = false;
     /**
      * A JSON serialised Map of attributes to be supplied to the template.
+     *
+     * This is applied after any group provided attributes and entries with
+     * null value will remove that attribute name from the ST.
      */
-    @Parameter(property = "jsonAttributes")
+    @Parameter
     public String jsonAttributes;
     /**
-     * This has to be a String, to stop the freaking annoying Maven behaviour of turning a relative file name into an
-     * absolute filename in ${basedir}, hmmm!
-     * <p>
-     * The path to the output file, can be a relative or absolute path.
-     * <p>
-     * I can't use Path, because there doesn't appear to be support for Path Mojo properties.
-     * <p>
-     * If a relative path and name ends in .java, then will treated as a path in directory
-     * "${basedir}/target/generated-sources/java", unless path starts with "target/generated-sources/java".
-     * <p>
-     * Else if a relative path and name doesn't end in .java, then will be a path in directory "${basedir}"
+     * Relative or absolute path of file to be rendered.
+     *
+     * If target is a relative path
+     *      If target ends in ".java" and doesn't start with ".", "src", or "target"
+     *          then is resolved as a child of "${project.basedir}/target/generated-sources/java"
+     *          directory.
+     *      Else is resolved as a child of "${project.basedir}" directory.
      */
     @Parameter(required = true)
     public String target;
@@ -95,14 +96,14 @@ public final class Template implements STErrorConsumer, Callable<Void> {
      * <p>
      * Default is ${project.build.sourceEncoding}, or the default charset name.
      */
-    @Parameter(defaultValue = "${project.build.sourceEncoding}")
+    @Parameter(property = "project.build.sourceEncoding")
     public String targetEncoding;
     /**
      * If true, don't fail on a NO_SUCH_PROPERTY error.
      * <p>
      * Default is ${string-template.allowNoSuchProperty}
      */
-    @Parameter(defaultValue = "${string-template.allowNoSuchProperty}")
+    @Parameter(property = "string-template.allowNoSuchProperty")
     public boolean allowNoSuchProperty;
     /**
      * If true add Unicode BOM bytes at start of target file
@@ -146,7 +147,7 @@ public final class Template implements STErrorConsumer, Callable<Void> {
     private transient Path targetPath;
     private transient Charset targetCharset;
     private transient boolean isJava;
-    private transient byte[] bomBytes;
+    private transient UnicodeBOM unicodeBOM;
     //
     private transient RenderContext ctx;
     private transient Group group;
@@ -169,7 +170,7 @@ public final class Template implements STErrorConsumer, Callable<Void> {
         ts.add("timeoutUnit", timeoutUnit);
         ts.add("timeoutDuration", timeoutDuration);
         ts.add("isJava", isJava);
-        ts.add("bomBytes", bomBytes);
+        ts.add("unicodeBOM", unicodeBOM);
         ts.add("allowNoSuchProperty", allowNoSuchProperty);
         ts.add("st", st);
         ts.complete();
@@ -188,49 +189,23 @@ public final class Template implements STErrorConsumer, Callable<Void> {
     // synchronized this maybe required for thread-safety.
     void init(final RenderContext ctx, final Group group) throws Exception {
         // Deserialize JSON to a Map, then validate to ensure that all the map keys are Strings.
-        if (jsonAttributes != null) {
-            final Map<?, ?> map = jsonMappers.get().readValue(jsonAttributes, Map.class);
-            map.forEach((k, v) -> {
-                if (k.getClass() != String.class)
-                    throw new IllegalArgumentException(
-                            format("non-String key %s:%s in jsonAttributes '%s'",
-                                   k.getClass().getName(), k.toString(), jsonAttributes));
-            });
-            attributes = (Map<String, Object>) map;
+        if (jsonAttributes != null)
+            attributes = readAndCheckJSONMap(jsonAttributes, "jsonAttributes", 0);
+
+        { // Resolve and validate targetEncoding
+            targetEncoding = ctx.resolveEncoding(targetEncoding);
+            final UnicodeBOM bom = of(targetEncoding);
+            if (null == bom)
+                targetCharset = forName(targetEncoding);
+            else {
+                unicodeBOM = bom;
+                targetCharset = bom.charset;
+            }
         }
 
-        if (null == targetEncoding)
-            targetEncoding = ctx.defaultEncoding;
+        targetPath = ctx.resolveTargetPath(target).normalize();
+        isJava = ctx.isGeneratedSourcesJavaFile(targetPath);
 
-        final UnicodeBOM bom = of(targetEncoding);
-        if (null == bom) {
-            if (withUnicodeBOM)
-                throw new IllegalStateException(format("targetEncoding '%s' is not supported for Unicode BOM",
-                                                       targetEncoding));
-            targetCharset = forName(targetEncoding);
-        } else {
-            bomBytes = bom.bytes;
-            targetCharset = bom.charset;
-        }
-
-        targetPath = get(target);
-        // Resolve target to an absolute Path, and detect java files in ${basedir}/target/generated-sources/java directory
-        if (targetPath.isAbsolute()) {
-            if (targetPath.startsWith(ctx.generatedSourcesJavaDir) && isJavaFile(targetPath))
-                isJava = true;
-        } else {
-            Path relativeTargetPath = targetPath;
-            if (isJavaFile(relativeTargetPath)) {
-                isJava = true;
-                if (relativeTargetPath.startsWith(RenderContext.GENERATED_SOURCES_JAVA))
-                    targetPath = ctx.baseDir.resolve(relativeTargetPath);
-                else
-                    targetPath = ctx.generatedSourcesJavaDir.resolve(relativeTargetPath);
-            } else
-                targetPath = ctx.baseDir.resolve(relativeTargetPath);
-        }
-
-        targetPath = targetPath.normalize().toAbsolutePath();
 
         final Path targetDir = targetPath.getParent();
         final BasicFileAttributes targetDirAttributes = existsAttributes(targetDir);
@@ -250,7 +225,7 @@ public final class Template implements STErrorConsumer, Callable<Void> {
     @Override
     @SuppressWarnings("UseSpecificCatch")
     public Void call() throws Exception {
-        final Log log = ctx.log;
+        final Log log = ctx.log();
 
         // Get template
         final ST st;
@@ -268,8 +243,8 @@ public final class Template implements STErrorConsumer, Callable<Void> {
             // Render to existing targetPathTmp.
             final Path targetPathTmp = targetPath.resolveSibling(targetPath.getFileName().toString() + ".tmp");
             try (OutputStream os = newOutputStream(targetPathTmp, CREATE, WRITE, TRUNCATE_EXISTING)) {
-                if (withUnicodeBOM)
-                    os.write(bomBytes);
+                if (withUnicodeBOM && null != unicodeBOM)
+                    unicodeBOM.write(os);
                 final Writer w = new OutputStreamWriter(os, targetCharset);
 
                 // Must provide listener to writer, because don't want it to use STGroup one when concurrent use stops
@@ -300,7 +275,7 @@ public final class Template implements STErrorConsumer, Callable<Void> {
     @SuppressWarnings({"UseSpecificCatch", "null"})
     public void accept(final String type, STMessage msg) {
         final RenderContext ctx = this.ctx;
-        final Log log = ctx.log;
+        final Log log = ctx.log();
         try {
             msg = ctx.patch(msg, group.encoding);
         } catch (Exception e) {

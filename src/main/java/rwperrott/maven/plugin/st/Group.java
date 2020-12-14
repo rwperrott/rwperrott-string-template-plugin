@@ -27,6 +27,8 @@ import static java.util.concurrent.Executors.newSingleThreadExecutor;
 import static java.util.concurrent.Executors.newWorkStealingPool;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static rwperrott.maven.plugin.st.Utils.*;
+import static rwperrott.stringtemplate.v4.STUtils.applyAttributes;
+import static rwperrott.stringtemplate.v4.STUtils.clearAttributes;
 
 public final class Group implements STErrorConsumer, Callable<Void> {
     /**
@@ -149,8 +151,8 @@ public final class Group implements STErrorConsumer, Callable<Void> {
     private transient Map<String, Map<String, ?>> attributesByTemplate;
     private transient STGroupType type;
     private transient STGroup stGroup;
-    // Cache of previously re
-    private transient Map<String, ST> stCache = new HashMap<>();
+    // Cache of previously request ST
+    private final transient Map<String, ST> stCache = new HashMap<>();
     private URL url;
     private transient RenderContext ctx;
     private transient boolean failed;
@@ -217,16 +219,16 @@ public final class Group implements STErrorConsumer, Callable<Void> {
                 if (null == v)
                     v = Objects.requireNonNull(stGroup.getInstanceOf(name), "st");
                 else
-                    removeAttributes(v, v.getAttributes());
+                    clearAttributes(v, v.getAttributes());
                 return v;
             });
 
         // Set ST attributes
         if (null != attributesByTemplate) {
-            addAttributes(st, attributesByTemplate.get("*"));
-            addAttributes(st, attributesByTemplate.get(name));
+            applyAttributes(st, attributesByTemplate.get("*"));
+            applyAttributes(st, attributesByTemplate.get(name));
         }
-        addAttributes(st, attributes);
+        applyAttributes(st, attributes);
         return st;
     }
 

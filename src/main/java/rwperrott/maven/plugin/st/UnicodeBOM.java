@@ -1,10 +1,17 @@
 package rwperrott.maven.plugin.st;
 
+import java.io.IOException;
+import java.io.OutputStream;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 
+/**
+ * Needed because JVM java.io developers were too lazy to add Unicode BOM support to
+ * InputStreamReader and OutputStreamWriter, and other similar code!
+ */
 @SuppressWarnings("unused")
 enum UnicodeBOM {
     UTF_8(StandardCharsets.UTF_8, 0xEF, 0xBB, 0xBF),
@@ -15,7 +22,7 @@ enum UnicodeBOM {
     // Used by Template.init()
     final Charset charset;
     // Used by Template.init()
-    final byte[] bytes;
+    private final byte[] bytes;
 
     UnicodeBOM(final Charset charset, final int... a) {
         this.charset = charset;
@@ -24,7 +31,8 @@ enum UnicodeBOM {
         while (--i >= 0) {
             final int v = a[i];
             if (v < 0 || v > 0xFF)
-                throw new IllegalArgumentException(String.format("invalid byte value a[%d]:0x%x in %s",i, v, this));
+                throw new IllegalArgumentException(
+                        String.format("invalid byte value a[%d]:0x%x in %s",i, v, this));
             bom[i] = (byte)v;
         }
         this.bytes = bom;
@@ -34,6 +42,22 @@ enum UnicodeBOM {
     // plugin org.codehaus.plexus:plexus-component-metadata:1.7.1.
     UnicodeBOM(final String charsetName, final int... a) {
         this(Charset.forName(charsetName), a);
+    }
+
+    void write(OutputStream os) throws IOException {
+        os.write(bytes);
+    }
+
+    // Sadly STGroup is brittle, so we can't inject a wrapper creator
+    // to detect Unicode BOM at the start of it's InputStreams.
+
+    @Override
+    public String toString() {
+        return "UnicodeBOM{" +
+               "name=" + name() +
+               ", charset=" + charset +
+               ", bytes=" + Arrays.toString(bytes) +
+               '}';
     }
 
     //
@@ -49,5 +73,9 @@ enum UnicodeBOM {
 
     static UnicodeBOM of(String key) {
         return MAP.get(key);
+    }
+
+    static UnicodeBOM of(Charset key) {
+        return MAP.get(key.name());
     }
 }
