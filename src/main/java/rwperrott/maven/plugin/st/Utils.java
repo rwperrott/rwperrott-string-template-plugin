@@ -32,14 +32,18 @@ final class Utils {
     private static final ObjectMapper mapper = new ObjectMapper();
     public static final ObjectReader reader = mapper.reader();
 
-    static <V> Map<String,V> readAndCheckJSONMap(final String json, final String name, final int checkDepth) throws IOException {
+    @SuppressWarnings("SameParameterValue")
+    static <V> Map<String, V> readAndCheckJSONMap(final String json, final String name, final int checkDepth) throws IOException {
         return validateAttributes(reader.readValue(json, Map.class), name, checkDepth);
     }
 
     // Used by Template.init()
+
     /**
-     * Support following links just-in-case
+     * Supports following links, just-in-case need this later.
      */
+    // Used by Template::init
+    @SuppressWarnings("unused")
     static BasicFileAttributes existsAttributes(final Path path, final LinkOption... options) {
         try {
             // Merge in Files.exists-like code, to simplify use.
@@ -60,7 +64,8 @@ final class Utils {
         }
     }
 
-    @SuppressWarnings("UseSpecificCatch")
+    // Used by Template::call
+    @SuppressWarnings({"UseSpecificCatch", "unused"})
     static void move(final Path from, final Path to) throws IOException {
         try {
             Files.move(from, to, REPLACE_EXISTING, ATOMIC_MOVE);
@@ -80,6 +85,6 @@ final class Utils {
     }
 
     static boolean isJavaFile(Path path) {
-       return path.getFileName().toString().endsWith(".java");
-   }
+        return path.getFileName().toString().endsWith(".java");
+    }
 }

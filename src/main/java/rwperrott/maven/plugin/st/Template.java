@@ -33,7 +33,6 @@ import static java.lang.String.format;
 import static java.nio.charset.Charset.forName;
 import static java.nio.file.Files.createDirectories;
 import static java.nio.file.Files.newOutputStream;
-import static java.nio.file.Paths.get;
 import static java.nio.file.StandardOpenOption.*;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static java.util.regex.Pattern.compile;
@@ -44,6 +43,7 @@ import static rwperrott.maven.plugin.st.Utils.*;
 /**
  * Where all the fun stuff happens.
  */
+@SuppressWarnings("unused")
 public final class Template implements STErrorConsumer, Callable<Void> {
     /**
      * The unique Template id, for logging.
@@ -70,20 +70,18 @@ public final class Template implements STErrorConsumer, Callable<Void> {
     public boolean failFast = false;
     /**
      * A JSON serialised Map of attributes to be supplied to the template.
-     *
-     * This is applied after any group provided attributes and entries with
-     * null value will remove that attribute name from the ST.
+     * <p>
+     * This is applied after any group provided attributes and entries with null value will remove that attribute name
+     * from the ST.
      */
     @Parameter
     public String jsonAttributes;
     /**
      * Relative or absolute path of file to be rendered.
-     *
-     * If target is a relative path
-     *      If target ends in ".java" and doesn't start with ".", "src", or "target"
-     *          then is resolved as a child of "${project.basedir}/target/generated-sources/java"
-     *          directory.
-     *      Else is resolved as a child of "${project.basedir}" directory.
+     * <p>
+     * If target is a relative path If target ends in ".java" and doesn't start with ".", "src", or "target" then is
+     * resolved as a child of "${project.basedir}/target/generated-sources/java" directory. Else is resolved as a child
+     * of "${project.basedir}" directory.
      */
     @Parameter(required = true)
     public String target;
@@ -100,6 +98,7 @@ public final class Template implements STErrorConsumer, Callable<Void> {
      * <p>
      * Default is ${string-template.allowNoSuchProperty}
      */
+    @SuppressWarnings("unused")
     @Parameter(property = "string-template.allowNoSuchProperty")
     public boolean allowNoSuchProperty;
     /**
@@ -126,6 +125,7 @@ public final class Template implements STErrorConsumer, Callable<Void> {
      * <t>
      * Default is TimeUnit.SECONDS
      */
+    @SuppressWarnings("CanBeFinal")
     @Parameter
     public TimeUnit timeoutUnit = SECONDS;
 
@@ -134,12 +134,14 @@ public final class Template implements STErrorConsumer, Callable<Void> {
      * <t>
      * Default is Long.MAX_VALUE
      */
+    @SuppressWarnings("CanBeFinal")
     @Parameter
     public long timeoutDuration = MAX_VALUE;
 
     /**
      * Only for transient storage of deserialized jsonAttributes.
      */
+    @SuppressWarnings("unused")
     private transient Map<String, Object> attributes;
     private transient Path targetPath;
     private transient Charset targetCharset;

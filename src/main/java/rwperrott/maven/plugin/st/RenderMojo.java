@@ -1,7 +1,7 @@
 /*
  * This substantially not Kevin Birch's work anymore.
  *
- * It's been hard work fixing all the bugs, rearchitecting,
+ * It's been hard work fixing all the bugs, re-architecting,
  * and replacing all the obsolete stuff, including for Maven 3.6.3.
  *
  * Copyright (c) 2020 Richard Perrott <github.rwp@hushmail.com>. All rights reserved.
@@ -58,7 +58,7 @@ import static rwperrott.maven.plugin.st.Utils.selectThrow;
 @SuppressWarnings("ALL")
 @Mojo(name = "render", defaultPhase = GENERATE_SOURCES, threadSafe = true)
 public final class RenderMojo extends AbstractMojo {
-    @Parameter(property="project.build.sourceEncoding")
+    @Parameter(property = "project.build.sourceEncoding")
     public String sourceEncoding = defaultCharset().name();
     /**
      * A relative directory path under "${project}/src/main", or an absolute directory path, to be used as the base
@@ -267,7 +267,7 @@ public final class RenderMojo extends AbstractMojo {
 
             // Init first to resolve field values, which are then validated here.
             try {
-                template.init(ctx,group);
+                template.init(ctx, group);
             } catch (Exception e) {
                 log.error(format("Failed to initialise%n%s", template), e);
                 if (failed())
@@ -308,10 +308,10 @@ public final class RenderMojo extends AbstractMojo {
         private final Path stSrcDir;
         private final Path generatedSourcesJavaDir;
 
-
         //
         // Private stuff
         private final AtomicBoolean hasJavaFiles = new AtomicBoolean();
+
         private Context(final Log log) throws MojoFailureException {
             super();
             //

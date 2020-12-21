@@ -9,8 +9,8 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Needed because JVM java.io developers were too lazy to add Unicode BOM support to
- * InputStreamReader and OutputStreamWriter, and other similar code!
+ * Needed because JVM java.io developers were too lazy to add Unicode BOM support to InputStreamReader and
+ * OutputStreamWriter, and other similar code!
  */
 @SuppressWarnings("unused")
 enum UnicodeBOM {
@@ -24,6 +24,12 @@ enum UnicodeBOM {
     // Used by Template.init()
     private final byte[] bytes;
 
+    // Not in-lined to workaround parse exception bug in Maven
+    // plugin org.codehaus.plexus:plexus-component-metadata:1.7.1.
+    UnicodeBOM(final String charsetName, final int... a) {
+        this(Charset.forName(charsetName), a);
+    }
+
     UnicodeBOM(final Charset charset, final int... a) {
         this.charset = charset;
         int i = a.length;
@@ -32,16 +38,10 @@ enum UnicodeBOM {
             final int v = a[i];
             if (v < 0 || v > 0xFF)
                 throw new IllegalArgumentException(
-                        String.format("invalid byte value a[%d]:0x%x in %s",i, v, this));
-            bom[i] = (byte)v;
+                        String.format("invalid byte value a[%d]:0x%x in %s", i, v, this));
+            bom[i] = (byte) v;
         }
         this.bytes = bom;
-    }
-
-    // Not in-lined to workaround parse exception bug in Maven
-    // plugin org.codehaus.plexus:plexus-component-metadata:1.7.1.
-    UnicodeBOM(final String charsetName, final int... a) {
-        this(Charset.forName(charsetName), a);
     }
 
     void write(OutputStream os) throws IOException {

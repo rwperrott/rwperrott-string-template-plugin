@@ -26,7 +26,8 @@ import static java.nio.charset.Charset.forName;
 import static java.util.concurrent.Executors.newSingleThreadExecutor;
 import static java.util.concurrent.Executors.newWorkStealingPool;
 import static java.util.concurrent.TimeUnit.SECONDS;
-import static rwperrott.maven.plugin.st.Utils.*;
+import static rwperrott.maven.plugin.st.Utils.readAndCheckJSONMap;
+import static rwperrott.maven.plugin.st.Utils.selectThrow;
 import static rwperrott.stringtemplate.v4.STUtils.applyAttributes;
 import static rwperrott.stringtemplate.v4.STUtils.clearAttributes;
 
@@ -36,9 +37,11 @@ public final class Group implements STErrorConsumer, Callable<Void> {
      * <p>
      * Default is false Disabled until ST concurrency bugs in ST4.3.1 are fixed.
      */
-    @SuppressWarnings({"unused", "FieldCanBeLocal"})
+    @SuppressWarnings({"unused"})
     //@Parameter(defaultValue = "${string-template.renderTemplatesConcurrently}")
     private final boolean renderTemplatesConcurrently = false;
+    // Cache of previously request ST
+    private final transient Map<String, ST> stCache = new HashMap<>();
     /**
      * The unique Group id, can be referenced groupId of Templates.
      */
@@ -53,7 +56,7 @@ public final class Group implements STErrorConsumer, Callable<Void> {
      * <p>
      * A STGroupString will be used if source containing "::=" and can contain multiple templates. The template(s) text
      * should be wrapped like
-     * <code></code><![CDATA[atemplate() ::= <%same-linet%> or << multiple-lines
+     * <code></code><![CDATA[aTemplate() ::= <%same-linet%> or << multiple-lines
      * >>]</code>, to avoid having to use XML escaping for <code><</code> and
      * <code>></code>.
      * <p>
@@ -121,7 +124,6 @@ public final class Group implements STErrorConsumer, Callable<Void> {
      */
     @SuppressWarnings("CanBeFinal")
     public long timeoutDuration = MAX_VALUE;
-
     /**
      * An optional JSON serialised Map of named maps; the name being a template name.
      * <p>
@@ -138,21 +140,17 @@ public final class Group implements STErrorConsumer, Callable<Void> {
      */
     @Parameter
     public String jsonAttributesByTemplate;
-
     /**
      * The array of templates to render, for this group.
      */
     @SuppressWarnings("CanBeFinal")
     List<Template> templates = new ArrayList<>();
-
     //
     // Transient variables
     //
     private transient Map<String, Map<String, ?>> attributesByTemplate;
     private transient STGroupType type;
     private transient STGroup stGroup;
-    // Cache of previously request ST
-    private final transient Map<String, ST> stCache = new HashMap<>();
     private URL url;
     private transient RenderMojo.Context ctx;
     private transient boolean failed;
