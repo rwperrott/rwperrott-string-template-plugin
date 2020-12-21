@@ -3,8 +3,8 @@
  */
 package rwperrott.maven.plugin.st;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.ObjectReader;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -12,11 +12,12 @@ import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.spi.FileSystemProvider;
-import java.util.*;
+import java.util.Arrays;
+import java.util.Map;
 import java.util.concurrent.ExecutionException;
 
-import static java.lang.ThreadLocal.withInitial;
 import static java.nio.file.LinkOption.NOFOLLOW_LINKS;
+import static java.nio.file.Paths.get;
 import static java.nio.file.StandardCopyOption.ATOMIC_MOVE;
 import static java.nio.file.StandardCopyOption.REPLACE_EXISTING;
 import static rwperrott.stringtemplate.v4.STUtils.validateAttributes;
@@ -25,8 +26,15 @@ final class Utils {
     private Utils() {
     }
 
-    // Used by Template for reading JSON
-    private static final ThreadLocal<ObjectMapper> jsonMappers = withInitial(ObjectMapper::new);
+    static final Path GENERATED_SOURCES_JAVA
+            = get("target", "generated-sources", "java");
+
+    private static final ObjectMapper mapper = new ObjectMapper();
+    public static final ObjectReader reader = mapper.reader();
+
+    static <V> Map<String,V> readAndCheckJSONMap(final String json, final String name, final int checkDepth) throws IOException {
+        return validateAttributes(reader.readValue(json, Map.class), name, checkDepth);
+    }
 
     // Used by Template.init()
     /**
@@ -71,7 +79,7 @@ final class Utils {
         return cause;
     }
 
-    static <V> Map<String,V> readAndCheckJSONMap(final String json,final String name, final int checkDepth) throws JsonProcessingException {
-        return validateAttributes(jsonMappers.get().readValue(json, Map.class), name, checkDepth);
-    }
+    static boolean isJavaFile(Path path) {
+       return path.getFileName().toString().endsWith(".java");
+   }
 }

@@ -277,45 +277,10 @@
                 <artifactId>maven-plugin-plugin</artifactId>
                 <executions>
                     <execution>
-                        <id>default-descriptor</id>
-                        <phase>process-classes</phase>
-                    </execution>
-                    <execution>
-                        <id>add artifact metadata</id>
-                        <goals>
-                            <goal>addPluginArtifactMetadata</goal>
-                        </goals>
-                        <configuration>
-                            <goalPrefix>string-template</goalPrefix>
-                        </configuration>
-                    </execution>
-                    <execution>
-                        <id>generate plugin descriptor</id>
-                        <goals>
-                            <goal>descriptor</goal>
-                        </goals>
-                        <configuration>
-                            <goalPrefix>string-template</goalPrefix>
-                        </configuration>
-                    </execution>
-                    <execution>
-                        <id>generate help</id>
-                        <goals>
-                            <goal>help</goal>
-                        </goals>
-                        <configuration>
-                            <detail>true</detail>
-                            <goal>render</goal>
-                        </configuration>
-                    </execution>
-                    <execution>
-                        <id>generate helpmojo</id>
+                        <id>generated-helpmojo</id>
                         <goals>
                             <goal>helpmojo</goal>
                         </goals>
-                        <configuration>
-                            <goalPrefix>string-template</goalPrefix>
-                        </configuration>
                     </execution>
                 </executions>
             </plugin>
@@ -389,22 +354,6 @@
                     <failOnViolations>true</failOnViolations>
                     <includeTestClasses>true</includeTestClasses>
                 </configuration>
-            </plugin>
-            <!-- Sub-project build -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-invoker-plugin</artifactId>
-                <configuration>
-                    <project>tests</project>
-                    <goals>
-                        <goal>clean</goal>
-                        <goal>test</goal>
-                    </goals>
-                    <postBuildHookScript>verify</postBuildHookScript> <!-- no extension required -->
-                </configuration>
-                <goals>
-                    <goal>run</goal>
-                </goals>
             </plugin>
         </plugins>
     </build>

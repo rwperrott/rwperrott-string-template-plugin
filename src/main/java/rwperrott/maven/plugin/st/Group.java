@@ -154,7 +154,7 @@ public final class Group implements STErrorConsumer, Callable<Void> {
     // Cache of previously request ST
     private final transient Map<String, ST> stCache = new HashMap<>();
     private URL url;
-    private transient RenderContext ctx;
+    private transient RenderMojo.Context ctx;
     private transient boolean failed;
 
     @Override
@@ -181,7 +181,7 @@ public final class Group implements STErrorConsumer, Callable<Void> {
      * validate and initialise for possible concurrency.
      */
     @SuppressWarnings("UseSpecificCatch")
-    void init(final RenderContext ctx) throws Exception {
+    void init(final RenderMojo.Context ctx) throws Exception {
         if (Objects.requireNonNull(source, "source").trim().isEmpty()) {
             throw new IllegalArgumentException("source is blank");
         }
@@ -235,7 +235,7 @@ public final class Group implements STErrorConsumer, Callable<Void> {
     @SuppressWarnings({"UseSpecificCatch", "ThrowableResultIgnored"})
     @Override
     public Void call() {
-        final RenderContext ctx = this.ctx;
+        final RenderMojo.Context ctx = this.ctx;
         final Log log = ctx.log();
 
         // Create and load STGroup

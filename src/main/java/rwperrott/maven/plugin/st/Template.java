@@ -4,7 +4,6 @@
 
 package rwperrott.maven.plugin.st;
 
-import org.apache.maven.Maven;
 import org.apache.maven.plugin.logging.Log;
 import org.apache.maven.plugins.annotations.Parameter;
 import org.stringtemplate.v4.AutoIndentWriter;
@@ -24,7 +23,6 @@ import java.nio.charset.Charset;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
-import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
@@ -46,7 +44,6 @@ import static rwperrott.maven.plugin.st.Utils.*;
 /**
  * Where all the fun stuff happens.
  */
-@SuppressWarnings("ALL")
 public final class Template implements STErrorConsumer, Callable<Void> {
     /**
      * The unique Template id, for logging.
@@ -149,7 +146,7 @@ public final class Template implements STErrorConsumer, Callable<Void> {
     private transient boolean isJava;
     private transient UnicodeBOM unicodeBOM;
     //
-    private transient RenderContext ctx;
+    private transient RenderMojo.Context ctx;
     private transient Group group;
     private transient ST st;
     private transient boolean failed;
@@ -187,7 +184,7 @@ public final class Template implements STErrorConsumer, Callable<Void> {
     }
 
     // synchronized this maybe required for thread-safety.
-    void init(final RenderContext ctx, final Group group) throws Exception {
+    void init(final RenderMojo.Context ctx, final Group group) throws Exception {
         // Deserialize JSON to a Map, then validate to ensure that all the map keys are Strings.
         if (jsonAttributes != null)
             attributes = readAndCheckJSONMap(jsonAttributes, "jsonAttributes", 0);
@@ -274,7 +271,7 @@ public final class Template implements STErrorConsumer, Callable<Void> {
     @Override
     @SuppressWarnings({"UseSpecificCatch", "null"})
     public void accept(final String type, STMessage msg) {
-        final RenderContext ctx = this.ctx;
+        final RenderMojo.Context ctx = this.ctx;
         final Log log = ctx.log();
         try {
             msg = ctx.patch(msg, group.encoding);
