@@ -91,6 +91,14 @@ public final class Group implements STErrorConsumer, Callable<Void> {
      * A map of type name to AttributeRenders class name; key = name of Class object to be rendered, value = name of
      * AttributeRender class to have an instance registered.
      *
+     * Simple class names are supported for any class in the following packages:
+     * <ul>
+     *     <li>java.lang</li>
+     *     <li>java.util</li>
+     *     <li>org.stringtemplate.v4</li>
+     *     <li>rwperrott.stringtemplate.v4</li>
+     * </ul>
+     *
      * @see <a href="https://www.stringtemplate.org/api/org/stringtemplate/v4/AttributeRenderer.html">AttributeRenderer</a>
      * @see <a href="https://github.com/antlr/stringtemplate4/blob/master/doc/renderers.md" target="_blank"
      *         >Attribute Renderers</a>
@@ -101,6 +109,14 @@ public final class Group implements STErrorConsumer, Callable<Void> {
     /**
      * A map of type name to ModelAdapter class name; key = name of Class object to be adapted, value = name of
      * ModelAdapter class to have an instance registered.
+     *
+     * Simple class names are supported for any class in the following packages:
+     * <ul>
+     *     <li>java.lang</li>
+     *     <li>java.util</li>
+     *     <li>org.stringtemplate.v4</li>
+     *     <li>rwperrott.stringtemplate.v4</li>
+     * </ul>
      *
      * @see <a href="https://www.stringtemplate.org/api/org/stringtemplate/v4/ModelAdapter.html">ModelAdapter</a>
      * @see <a href="https://www.stringtemplate.org/api/org/stringtemplate/v4/ModelAdaptor.html" target="_blank"
