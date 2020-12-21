@@ -259,15 +259,15 @@ public final class Group implements STErrorConsumer, Callable<Void> {
             stGroup.setListener(this); // Detect bug of StringTemplate not always throwing an exception for a load error
             stGroup.load();
         } catch (Exception e) {
-            throw new IllegalStateException(format("failed to create an %s (%s)",
+            throw new IllegalStateException(format("failed to create a %s (%s)",
                                                    type.stGroupClass.getSimpleName(), e.getMessage()), e);
         }
         // Handle bug of StringTemplate not always throwing an exception for a load error
         if (failed) {
-            throw new IllegalStateException("failed to fully create an " + type.stGroupClass.getSimpleName());
+            throw new IllegalStateException("failed to fully create a " + type.stGroupClass.getSimpleName());
         }
 
-        log.info(format("Group id \"%s\" created an %s \"%s\"",
+        log.info(format("Group id \"%s\" created a %s \"%s\"",
                         id, type.stGroupClass.getSimpleName(), type.getSource(stGroup)));
         //
         ctx.registerRenderers(stGroup, attributeRenderers);
