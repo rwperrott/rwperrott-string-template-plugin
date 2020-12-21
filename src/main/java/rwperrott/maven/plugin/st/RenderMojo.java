@@ -21,22 +21,27 @@ import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.project.MavenProject;
 import org.stringtemplate.v4.compiler.STException;
+import rwperrott.stringtemplate.v4.STContext;
+import rwperrott.stringtemplate.v4.STUtils;
 import rwperrott.stringtemplate.v4.ToStringBuilder;
 
+import java.io.Closeable;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Stream;
 
 import static java.lang.String.format;
 import static java.nio.charset.Charset.defaultCharset;
+import static java.nio.file.Files.exists;
+import static java.nio.file.Files.isDirectory;
+import static java.nio.file.Paths.get;
 import static org.apache.maven.plugins.annotations.LifecyclePhase.GENERATE_SOURCES;
 import static rwperrott.maven.plugin.st.Utils.selectThrow;
 
@@ -132,7 +137,10 @@ public final class RenderMojo extends AbstractMojo {
     public void execute() throws MojoExecutionException, MojoFailureException {
         final Log log = getLog();
         try {
-            try (final RenderContext ctx = RenderContext.of(this)) { // Ensure that stStateMap saved
+            try (final Context ctx = new Context(log)) { // Ensure that stStateMap saved
+                // TODO: decide if will expose any options.
+                ctx.allOptions();
+                //
                 final Map<String, Group> groupById = initGroups(ctx);
                 initTemplates(ctx, groupById);
                 final ExecutorService es = renderGroupsConcurrently
@@ -176,11 +184,11 @@ public final class RenderMojo extends AbstractMojo {
                 log.info("All Groups rendered");
             }
         } catch (IOException e) {
-            log.warn("RenderContext close failed", e);
+            log.warn("Context close failed", e);
         }
     }
 
-    private Map<String, Group> initGroups(final RenderContext ctx) throws MojoExecutionException {
+    private Map<String, Group> initGroups(final Context ctx) throws MojoExecutionException {
         final Log log = ctx.log();
         final int count = groups.length;
         final Map<String, Group> byId = new HashMap<>(count);
@@ -222,7 +230,7 @@ public final class RenderMojo extends AbstractMojo {
         return byId;
     }
 
-    private void initTemplates(final RenderContext ctx, final Map<String, Group> groupById) throws MojoExecutionException {
+    private void initTemplates(final Context ctx, final Map<String, Group> groupById) throws MojoExecutionException {
         final Log log = ctx.log();
         boolean failed = false;
         final int count = templates.length;
@@ -291,5 +299,106 @@ public final class RenderMojo extends AbstractMojo {
     private boolean failed() {
         failed = true;
         return failFast;
+    }
+
+    final class Context extends STContext implements Closeable {
+
+        private final Log log;
+        private final Path baseDir;
+        private final Path stSrcDir;
+        private final Path generatedSourcesJavaDir;
+
+
+        //
+        // Private stuff
+        private final AtomicBoolean hasJavaFiles = new AtomicBoolean();
+        private Context(final Log log) throws MojoFailureException {
+            super();
+            //
+            final Path baseDir = project.getBasedir().toPath().toAbsolutePath();
+            final Path templateSrcDir = get(RenderMojo.this.templateSrcDir);
+            // Resolve stSrcDir if relative
+            if (!templateSrcDir.isAbsolute()) {
+                stSrcDir = baseDir
+                        .resolve("src")
+                        .resolve("main")
+                        .resolve(templateSrcDir);
+            } else {
+                stSrcDir = templateSrcDir;
+            }
+
+            // Ensure that stSrcDir exists and is a directory
+            try {
+                if (!exists(stSrcDir)) {
+                    throw new FileNotFoundException(stSrcDir.toString());
+                }
+                if (!isDirectory(stSrcDir)) {
+                    throw new IOException(format("'%s' not a directory", stSrcDir));
+                }
+            } catch (IOException e) {
+                throw new MojoFailureException(
+                        format("Invalid templateSrcDir '%s' (%s)",
+                               templateSrcDir, e.getMessage()), e);
+            }
+
+            // Made use of optional plugin Dependencies feature to remove the need to explicitly build a ClassLoader,
+            // instead get the classLoader of a plugin class.
+            //
+            this.log = log;
+            this.baseDir = baseDir;
+            this.generatedSourcesJavaDir = baseDir.resolve(Utils.GENERATED_SOURCES_JAVA);
+        }
+
+        Log log() {
+            return log;
+        }
+
+        Path resolveTargetPath(String target) {
+            Path targetPath = get(target);
+            if (targetPath.isAbsolute())
+                return targetPath;
+
+            if (Utils.isJavaFile(targetPath))
+                switch (targetPath.getName(0).toString()) {
+                    case ".":
+                    case "src":
+                    case "target":
+                        break;
+                    default:
+                        if (!targetPath.startsWith(Utils.GENERATED_SOURCES_JAVA)) {
+                            return generatedSourcesJavaDir.resolve(targetPath);
+                        }
+                        break;
+                }
+
+            return baseDir.resolve(targetPath);
+        }
+
+        boolean isGeneratedSourcesJavaFile(Path path) {
+            return path.startsWith(generatedSourcesJavaDir) && Utils.isJavaFile(path);
+        }
+
+        boolean failFast() {
+            return failFast;
+        }
+
+        String resolveEncoding(String encoding) {
+            return null == encoding ? sourceEncoding : encoding.toUpperCase(Locale.ROOT);
+        }
+
+        STUtils.TypeAndURL resolveTypeAndURL(final String source) throws IOException {
+            return STUtils.resolveTypeAndURL(source, stSrcDir);
+        }
+
+        // Use by Template to register generated .java files.
+        void onGeneratedSourcesJavaFile() {
+            // Only set once to avoid redundant costs
+            if (hasJavaFiles.compareAndSet(false, true)) {
+                final MavenProject project = RenderMojo.this.project;
+                synchronized (project) { // Just-in-case method not Thread-safe.
+                    project.addCompileSourceRoot(generatedSourcesJavaDir.toString());
+                }
+            }
+        }
     }
 }
