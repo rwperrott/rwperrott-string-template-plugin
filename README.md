@@ -72,7 +72,7 @@ A configuration template is as follows:
                 <renderGroupsConcurrently>Optional: if true, render groups concurrently, using all the CPU cores</renderGroupsConcurrently>
                 <groups>
                     <group>
-                        <id>Required: unique id of group</name>
+                        <id>Required: unique id of group</id>
                         <source>Required: A string expression, in CDATA section, url/path for a directory, or url/path for a .stg file</source>
                         <encoding>Optional: override default source encoding charset name</encoding>
                         <failFast>Optional: if true, stop when first failure or timeouts occurs.</failFast>
